@@ -11,7 +11,7 @@ from telegram.ext import (
 
 from database import channels_db
 from utils.permissions import permissions
-from utils.shortlink import shortlink
+from utils.shortlink import shortcode
 
 CHANNELS_PER_PAGE = 10
 
