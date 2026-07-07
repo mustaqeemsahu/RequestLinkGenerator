@@ -77,7 +77,7 @@ async def add_channel(
             "⚠️ Channel already exists."
         )
 
-    code = await shortlink.generate(
+    code = await shortcode.generate(
         username=chat.username,
         title=chat.title,
     )
