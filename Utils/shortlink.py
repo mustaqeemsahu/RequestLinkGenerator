@@ -4,51 +4,41 @@ import string
 from database import channels_db
 
 
-class ShortLink:
+class ShortCodeGenerator:
 
     @staticmethod
     def _clean(text: str) -> str:
-        """
-        Keep only letters and numbers.
-        """
-
         if not text:
             return "CH"
 
         text = "".join(
             c for c in text
             if c.isalnum()
-        )
+        ).upper()
 
-        return text.upper()
+        return text
 
-    @staticmethod
-    def _prefix(username=None, title=None):
+    @classmethod
+    def _prefix(cls, username=None, title=None):
 
         if username:
-
             username = username.replace("@", "")
+            username = cls._clean(username)
+            return username[:4]
 
-            username = ShortLink._clean(username)
+        title = cls._clean(title)
 
-            return username[:3]
-
-        title = ShortLink._clean(title)
-
-        return title[:3]
+        return title[:4]
 
     @staticmethod
-    def _random():
+    def _suffix(length=3):
 
-        letters = random.choice(
-            string.ascii_uppercase
+        return "".join(
+            random.choices(
+                string.ascii_uppercase + string.digits,
+                k=length,
+            )
         )
-
-        number = random.choice(
-            string.digits
-        )
-
-        return f"{number}{letters}"
 
     @classmethod
     async def generate(
@@ -64,9 +54,9 @@ class ShortLink:
 
         while True:
 
-            code = prefix + cls._random()
+            code = f"{prefix}{cls._suffix()}"
 
-            exists = await channels_db.get_channel_by_code(
+            exists = await channels_db.get_by_short_code(
                 code
             )
 
@@ -74,4 +64,4 @@ class ShortLink:
                 return code
 
 
-shortlink = ShortLink()
+shortcode = ShortCodeGenerator()
