@@ -245,3 +245,14 @@ async def get_channels_page(
                 ]
             }
     )
+
+async def get_by_short_code(
+        self,
+        code: str,
+    ):
+
+        return await self.col.find_one(
+            {
+                "short_code": code.upper()
+            }
+        )
