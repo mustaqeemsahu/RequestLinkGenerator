@@ -13,66 +13,52 @@ from database import channels_db
 from utils.permissions import permissions
 from utils.shortlink import shortcode
 
-CHANNELS_PER_PAGE = 10
+
+BOT_USERNAME = "YOUR_BOT_USERNAME"  # Replace after deployment
 
 
-async def add_channel(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
 
     if not await permissions.is_admin(user.id):
-
         return await update.message.reply_text(
             "❌ You are not allowed to use this command."
         )
 
     if len(context.args) != 1:
-
         return await update.message.reply_text(
-            "Usage:\n"
-            "/addchannel <Channel ID | @username>"
+            "Usage:\n/addchannel <Channel ID | @username>"
         )
 
     target = context.args[0]
 
     try:
-
         chat = await context.bot.get_chat(target)
-
     except Exception:
-
         return await update.message.reply_text(
-            "❌ Invalid Channel."
+            "❌ Invalid channel."
         )
 
     try:
-
         me = await context.bot.get_chat_member(
             chat.id,
             context.bot.id,
         )
-
     except Exception:
-
         return await update.message.reply_text(
             "❌ Add me as admin first."
         )
 
-    if me.status != "administrator":
-
+    if me.status not in (
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.OWNER,
+    ):
         return await update.message.reply_text(
-            "❌ Add me as administrator first."
+            "❌ I must be an administrator."
         )
 
-    exists = await channels_db.channel_exists(
-        chat.id
-    )
-
-    if exists:
-
+    if await channels_db.channel_exists(chat.id):
         return await update.message.reply_text(
             "⚠️ Channel already exists."
         )
@@ -90,169 +76,91 @@ async def add_channel(
         added_by=user.id,
     )
 
+    deep_link = f"https://t.me/{BOT_USERNAME}?start=req_{code}"
+
     text = (
-        "✅ Channel Added Successfully\n\n"
-        f"📺 Name : {chat.title}\n"
-        f"🆔 ID : <code>{chat.id}</code>\n"
-        f"👤 Username : @{chat.username if chat.username else 'Private'}\n"
-        f"🔗 Code : <code>{code}</code>"
+        "✅ <b>Channel Added Successfully</b>\n\n"
+        f"📺 <b>{chat.title}</b>\n"
+        f"🆔 <code>{chat.id}</code>\n"
+        f"🔑 <code>{code}</code>\n\n"
+        "Share Link:\n"
+        f"<code>{deep_link}</code>"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🔗 Open Link",
+                    url=deep_link,
+                )
+            ]
+        ]
     )
 
     await update.message.reply_text(
         text,
         parse_mode="HTML",
+        reply_markup=keyboard,
     )
 
 
-add_channel_handler = CommandHandler(
-    "addchannel",
-    add_channel,
-  )
-
-async def remove_channel(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
 
     if not await permissions.is_admin(user.id):
-        return await update.message.reply_text(
-            "❌ You are not allowed to use this command."
-        )
+        return await update.message.reply_text("❌ Permission denied.")
 
     if len(context.args) != 1:
         return await update.message.reply_text(
-            "Usage:\n/removechannel <Channel ID>"
+            "/removechannel <Channel ID>"
         )
 
     try:
         channel_id = int(context.args[0])
     except ValueError:
-        return await update.message.reply_text(
-            "❌ Invalid Channel ID."
-        )
+        return await update.message.reply_text("❌ Invalid Channel ID.")
 
-    channel = await channels_db.get_channel(channel_id)
-
-    if not channel:
-        return await update.message.reply_text(
-            "❌ Channel not found."
-        )
+    if not await channels_db.channel_exists(channel_id):
+        return await update.message.reply_text("❌ Channel not found.")
 
     await channels_db.remove_channel(channel_id)
 
     await update.message.reply_text(
-        f"✅ Removed **{channel['title']}** successfully.",
-        parse_mode="Markdown"
+        "✅ Channel removed successfully."
     )
 
 
-async def channels(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    page = 1
+    if not await permissions.is_admin(update.effective_user.id):
+        return
 
-    channels = await channels_db.get_channels_page(
-        page,
-        10,
-    )
+    channels = await channels_db.get_channels(page=1, limit=10)
 
-    total = await channels_db.total_channels()
-
-    pages = (total + 9) // 10
+    if not channels:
+        return await update.message.reply_text("No channels added.")
 
     text = "<b>📺 Channels</b>\n\n"
 
     for i, ch in enumerate(channels, start=1):
-
         text += (
             f"{i}. <b>{ch['title']}</b>\n"
-            f"<code>{ch['channel_id']}</code>\n"
-            f"🔗 {ch['short_code']}\n\n"
+            f"🔑 <code>{ch['short_code']}</code>\n"
+            f"🆔 <code>{ch['channel_id']}</code>\n\n"
         )
 
-    keyboard = []
+    total = await channels_db.total_channels()
 
-    if pages > 1:
-
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    "Next ➡️",
-                    callback_data="channels_2",
-                )
-            ]
-        )
+    text += f"Total : <b>{total}</b>"
 
     await update.message.reply_text(
         text,
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-async def get_channels_page(
-        self,
-        page: int = 1,
-        limit: int = 10,
-    ):
 
-        skip = (page - 1) * limit
-
-        channels = []
-
-        cursor = (
-            self.col
-            .find({})
-            .sort("created_at", 1)
-            .skip(skip)
-            .limit(limit)
-        )
-
-        async for channel in cursor:
-            channels.append(channel)
-
-        return channels
-
-    async def search_channel(
-        self,
-        keyword: str,
-    ):
-
-        return await self.col.find_one(
-            {
-                "$or": [
-                    {
-                        "title": {
-                            "$regex": keyword,
-                            "$options": "i",
-                        }
-                    },
-                    {
-                        "short_code": {
-                            "$regex": keyword,
-                            "$options": "i",
-                        }
-                    },
-                    {
-                        "username": {
-                            "$regex": keyword,
-                            "$options": "i",
-                        }
-                    },
-                ]
-            }
-    )
-
-async def get_by_short_code(
-        self,
-        code: str,
-    ):
-
-        return await self.col.find_one(
-            {
-                "short_code": code.upper()
-            }
-        )
+add_channel_handler = CommandHandler("addchannel", add_channel)
+remove_channel_handler = CommandHandler("removechannel", remove_channel)
+channels_handler = CommandHandler("channels", channels)
